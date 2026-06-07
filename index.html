@@ -673,6 +673,10 @@ tbody tr:hover { background: #f8fafc; }
       <input type="checkbox" id="repeatRoster">
       Repeat Roster (Night same as Day)
     </label>
+    <label class="checkbox-label">
+      <input type="checkbox" id="repeatDayFromLastNight">
+      Repeat Roster (Day same as last Night)
+    </label>
   </div>
 
   <!-- ═══════ ROSTER PREVIEW ═══════ -->
@@ -878,6 +882,11 @@ function generateRoster() {
   if (!tellers.length) { alert("Enter teller IDs"); return; }
 
   const repeatRoster = document.getElementById("repeatRoster").checked;
+  let repeatDayFromLastNight = document.getElementById("repeatDayFromLastNight").checked;
+  if (repeatRoster && repeatDayFromLastNight) {
+    repeatDayFromLastNight = false;
+    document.getElementById("repeatDayFromLastNight").checked = false;
+  }
   const rotationCycle = ["day","day","day","day","night","night","night","night","off","off","off","off"];
   let rotIdx = parseInt(document.getElementById("baseRotation").value);
 
@@ -886,6 +895,8 @@ function generateRoster() {
   let tmpRot  = rotIdx;
   let rotTellers = [...tellers];
   let nightTellers = []; // persistent night tellers for Repeat Roster
+  let nightBlockOrders = [];
+  let nextDayRepeatOrders = [];
   let lastDayTellers = [];
 
   while (tmpDate < startD) {
@@ -901,7 +912,12 @@ function generateRoster() {
 
       const maxLen = Math.max(rotTellers.length, booths.length);
       
-      lastDayTellers = [...rotTellers];
+      const currentDayTellers = (repeatDayFromLastNight && nextDayRepeatOrders.length > 0)
+        ? [...nextDayRepeatOrders.shift()]
+        : [...rotTellers];
+
+      lastDayTellers = [...currentDayTellers];
+      rotTellers = [...currentDayTellers];
       // Simulate day rotation
       rotTellers.unshift(rotTellers.pop());
       
@@ -909,6 +925,12 @@ function generateRoster() {
         nightTellers = [...lastDayTellers];
       }
     } else if (dutyType === "night") {
+      const currentNightTellers = repeatRoster ? [...nightTellers] : [...rotTellers];
+
+      if (repeatDayFromLastNight) {
+        nightBlockOrders.push([...currentNightTellers]);
+      }
+
       if (repeatRoster) {
         if(nightTellers.length > 0) nightTellers.unshift(nightTellers.pop());
       } else {
@@ -917,6 +939,10 @@ function generateRoster() {
     }
     
     tmpRot = (tmpRot + 1) % rotationCycle.length;
+    if (repeatDayFromLastNight && dutyType === "night" && rotationCycle[tmpRot] !== "night" && nightBlockOrders.length > 0) {
+      nextDayRepeatOrders = nightBlockOrders.map(order => [...order]);
+      nightBlockOrders = [];
+    }
     tmpDate.setDate(tmpDate.getDate() + 1);
   }
 
@@ -942,18 +968,23 @@ function generateRoster() {
                   : previewPattern === "8h" ? booths8
                   : booths6; // for 'both', we use 6h as base length
 
-      const maxLen = Math.max(rotTellers.length, booths.length);
+      const currentDayTellers = (repeatDayFromLastNight && nextDayRepeatOrders.length > 0)
+        ? [...nextDayRepeatOrders.shift()]
+        : [...rotTellers];
+
+      const maxLen = Math.max(currentDayTellers.length, booths.length);
       for (let i = 0; i < maxLen; i++) {
         previewRoster[dateStr].push({
           shift: "DAY",
           booth8: booths8[i] || "",
           booth6: booths6[i] || "",
           booth : previewPattern === "6h" ? booths6[i] || "" : previewPattern === "8h" ? booths8[i] || "" : "",
-          teller: rotTellers[i % rotTellers.length]
+          teller: currentDayTellers[i % currentDayTellers.length]
         });
       }
 
-      lastDayTellers = [...rotTellers];  // store last day tellers
+      lastDayTellers = [...currentDayTellers];  // store last day tellers
+      rotTellers = [...currentDayTellers];
       rotTellers.unshift(rotTellers.pop()); // rotate for next day
 
       if (repeatRoster && nightTellers.length === 0) {
@@ -984,13 +1015,23 @@ function generateRoster() {
       }
 
       if (repeatRoster) {
+        if (repeatDayFromLastNight) {
+          nightBlockOrders.push([...currentTellers]);
+        }
         nightTellers.unshift(nightTellers.pop()); // rotate night tellers
       } else {
+        if (repeatDayFromLastNight) {
+          nightBlockOrders.push([...currentTellers]);
+        }
         rotTellers.unshift(rotTellers.pop()); // normal rotation
       }
     }
 
     cRot = (cRot + 1) % rotationCycle.length;
+    if (repeatDayFromLastNight && dutyType === "night" && rotationCycle[cRot] !== "night" && nightBlockOrders.length > 0) {
+      nextDayRepeatOrders = nightBlockOrders.map(order => [...order]);
+      nightBlockOrders = [];
+    }
   }
 
   renderPreview();
@@ -1167,6 +1208,17 @@ function applyRoleUI(){
 
 window.addEventListener("DOMContentLoaded", () => {
   setPreviewPattern("6h");
+
+  const repeatRoster = document.getElementById("repeatRoster");
+  const repeatDayFromLastNight = document.getElementById("repeatDayFromLastNight");
+  if (repeatRoster && repeatDayFromLastNight) {
+    repeatRoster.addEventListener("change", () => {
+      if (repeatRoster.checked) repeatDayFromLastNight.checked = false;
+    });
+    repeatDayFromLastNight.addEventListener("change", () => {
+      if (repeatDayFromLastNight.checked) repeatRoster.checked = false;
+    });
+  }
   
   const teamSelect = document.getElementById("teamSelect");
   if(teamSelect) {
